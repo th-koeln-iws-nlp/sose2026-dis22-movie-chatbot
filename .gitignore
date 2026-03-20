@@ -10,5 +10,6 @@ wheels/
 .venv
 .env
 __marimo__/
-.pptx
+*.pptx
 .DS_Store
+.claude/
