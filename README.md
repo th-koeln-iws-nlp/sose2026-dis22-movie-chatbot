@@ -44,7 +44,7 @@ Termin: **01.07.2026**
 
 Die Architektur des Chatbots ist in der folgenden Grafik dargestellt:
 
-![Chatbot Architecture](img/architecture.png)
+![Chatbot Architecture](./slides/architektur.png)
 
 ## Setup
 
