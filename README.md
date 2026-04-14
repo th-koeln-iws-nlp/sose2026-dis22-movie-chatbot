@@ -46,6 +46,13 @@ Die Architektur des Chatbots ist in der folgenden Grafik dargestellt:
 
 ![Chatbot Architecture](./slides/architektur.png)
 
+## Datensatz
+
+Wir werden hauptsächlich mit einem [TMDB Datensatz von 5000](https://www.kaggle.com/datasets/tmdb/tmdb-movie-metadata) Filmen arbeiten, die im `data` Ordner liegen.
+
+Außerdem benötigt ihr Zugang zur [TMDB API](https://developer.themoviedb.org/docs/getting-started). Wichtig ist, in der Applikation darauf hinzuweisen
+> Our API is free to use for non-commercial purposes as long as you attribute TMDB as the source of the data and/or images.
+
 ## Setup
 
 - `uv` installieren
