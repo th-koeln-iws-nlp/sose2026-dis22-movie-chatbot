@@ -65,8 +65,10 @@ uv sync
 # GEMINI_API_KEY=...
 # OPEN_WEB_UI_API_KEY=...
 
-# Chatbot starten
+# Chatbot starten wenn just installiert ist
 just chatbot
+# Chatbot starten ohne just
+uv run streamlit run src/chatbot.py
 ```
 
 ## Linksammlung
