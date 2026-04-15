@@ -30,7 +30,7 @@ def _():
     from dotenv import load_dotenv
     from google import genai
 
-    return Path, genai, load_dotenv, os, pd
+    return genai, load_dotenv, os, pd
 
 
 @app.cell
@@ -45,8 +45,8 @@ def _(genai, load_dotenv, os):
 
 
 @app.cell
-def _(Path):
-    data_path = Path(__file__).parent.parent / "data" / "imdb_top_1000.csv"
+def _():
+    data_path = "./data/tmdb_5000_movies.csv"
     return (data_path,)
 
 
