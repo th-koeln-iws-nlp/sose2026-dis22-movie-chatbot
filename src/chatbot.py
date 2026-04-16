@@ -56,7 +56,7 @@ if prompt := st.chat_input("Ask me about movies..."):
     with st.chat_message("user"):
         st.write(prompt)
 
-    response = llm.generate_response(prompt)
+    response = llm.generate_response(st.session_state.messages)
     st.session_state.messages.append({"role": "assistant", "content": response})
     with st.chat_message("assistant"):
         st.write(response)

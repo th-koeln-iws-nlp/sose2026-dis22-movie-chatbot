@@ -13,3 +13,9 @@ __marimo__/
 *.pptx
 .DS_Store
 .claude/
+
+# Account creation output (contains passwords!)
+accounts_created.txt
+teilnehmer.txt
+create_owui_accounts.py
+DIS22a SoSe26 Teams (Ergebnisse).csv
