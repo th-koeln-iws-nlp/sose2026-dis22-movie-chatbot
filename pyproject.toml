@@ -5,18 +5,31 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "chromadb>=1.5.7",
+    # FlagEmbedding from fork until transformers 5.x fix is merged upstream
+    # See: https://github.com/FlagOpen/FlagEmbedding/issues/1561
+    # PR:  https://github.com/FlagOpen/FlagEmbedding/pull/1563
+    "flagembedding @ git+https://github.com/therealmichaelberna/FlagEmbedding.git@transformers-v5-compat",
     "google-genai>=1.68.0",
+    "googleapis-common-protos>=1.70.0",
     "instructor>=1.14.5",
     "openai>=2.29.0",
     "pandas>=2.3.3",
+    "plotly>=6.7.0",
     "pyzmq>=27.1.0",
+    "qdrant-client[fastembed]>=1.17.1",
+    "sentence-transformers>=5.4.1",
     "streamlit>=1.55.0",
+    "torch>=2.11.0",
+    "transformers>=5.5.4",
+    "umap-learn>=0.5.12",
     "watchdog>=6.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "black>=26.3.1",
+    "ipython>=9.12.0",
     "marimo>=0.21.1",
     "python-dotenv>=1.2.2",
     "ruff>=0.15.7",
