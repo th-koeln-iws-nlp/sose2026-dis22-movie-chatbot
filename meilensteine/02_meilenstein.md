@@ -1,3 +1,4 @@
+0. Legt in einer extra Datei einen System Prompt für euren Chatbot an und ladet ihn in das jeweilige LLM. Ihr könnt euch auch verschiedene Rollen ausdenken und die Nutzer*innen diese auswählen lassen.
 1. Erstellt eine Vektordatenbank. Das kann qdrant mit einem Free Trial Client oder Chroma DB mit persistent Storage oder eine andere Vektordatenbank sein.
 2. Entscheidet euch für ein Embedding Model. Zum Beispiel Gemini, OpenAI oder ein lokales über HuggingFace bzw `sentence-transformers`. **Wichtig:** Das Embedding Model ist dann später auch das welches für RAG benutzt wird.
 3. Füllt die Vektordatenbank mit Filmen. Der Plot des Films ist dabei der Vektor. Die Metadaten sind mindestens: Filmtitel, Erscheinungsjahr und Genre. Mögliche Filmdatenbanken seht ihr unten. Als Grundlage könnt ihr das [embeddings](./notebooks/embeddings.py) marimo notebook nehmen.

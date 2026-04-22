@@ -107,7 +107,7 @@ def _(gemini_models, mo, owui_models, provider_selector):
         start=0.0,
         stop=1.0,
         step=0.1,
-        value=0.0,
+        value=0.7,
         label="Temperature",
         show_value=True,
     )
@@ -587,7 +587,7 @@ def _():
         """Strukturierte Filmdaten aus einer Beschreibung"""
 
         titel: str = Field(description="Offizieller Filmtitel")
-        jahr: int = Field(description="Erscheinungsjahr", ge=1888, le=2030)
+        jahr: int = Field(description="Erscheinungsjahr", ge=2010, le=2030)
         regisseur: str = Field(description="Name des Regisseurs")
         hauptdarsteller: List[str] = Field(description="Liste der Hauptdarsteller")
         genre: List[str] = Field(description="Filmgenres")
