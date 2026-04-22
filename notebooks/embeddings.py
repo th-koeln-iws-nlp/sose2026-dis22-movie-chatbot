@@ -335,25 +335,48 @@ def _(mo):
     mo.md("""
     ## 4. Interaktive 2D-Projektion der Embeddings
 
-    Wir projizieren die hochdimensionalen Vektoren mit [UMAP](https://umap-learn.readthedocs.io/) auf 2 Dimensionen
-    und visualisieren sie interaktiv mit Plotly. Jeder Punkt ist ein Film – hover für Details.
+    Wir projizieren die hochdimensionalen Vektoren mit [PyMDE](https://pymde.org/) auf 2 Dimensionen.
+    PyMDE (Minimum-Distortion Embedding) erhält die Nachbarschaftsstruktur besser als UMAP bei
+    großen Abständen. **Punkte auswählen** zeigt die zugehörigen Filme als Tabelle.
     """)
     return
 
 
-@app.cell
-def _(mo, movies_df, selected_embeddings):
-    import json
-    import plotly.express as px
-    import umap
+@app.function
+@mo.persistent_cache
+def compute_mde(embeddings_key, embeddings, device):
+    import marimo as _mo
+    import pymde
+    import torch
 
-    _reducer = umap.UMAP(
-        n_components=2, random_state=42, n_neighbors=15, min_dist=0.1
+    _mo.output.append(
+        _mo.md("MDE wird berechnet … einen Moment bitte.").callout(kind="warn")
     )
-    _coords = _reducer.fit_transform(selected_embeddings)
+    _data = torch.tensor(embeddings, dtype=torch.float32)
+    _mde = pymde.preserve_neighbors(
+        _data,
+        embedding_dim=2,
+        constraint=pymde.Standardized(),
+        device=device,
+        verbose=True,
+    )
+    coords = _mde.embed(verbose=True)
+    _mo.output.clear()
+    return coords
 
 
-    # Genre des ersten Genres extrahieren für Farbe
+@app.cell
+def _(device, model_selector, selected_embeddings):
+    # embeddings_key stellt sicher dass der Cache bei Modellwechsel neu berechnet wird
+    mde_coords = compute_mde(model_selector.value, selected_embeddings, device)
+    return (mde_coords,)
+
+
+@app.cell
+def _(mde_coords, mo, movies_df):
+    import json
+    import pymde
+
     def _parse_first_genre(genres_str):
         try:
             genres_list = json.loads(genres_str.replace("'", '"'))
@@ -361,26 +384,36 @@ def _(mo, movies_df, selected_embeddings):
         except Exception:
             return "Unknown"
 
-
     _genres = movies_df["genres"].apply(_parse_first_genre)
+    _genre_codes = _genres.astype("category").cat.codes.to_numpy()
 
-    _fig = px.scatter(
-        x=_coords[:, 0],
-        y=_coords[:, 1],
-        color=_genres,
-        hover_name=movies_df["title"],
-        hover_data={
-            "Bewertung": movies_df["vote_average"],
-            "Jahr": movies_df["release_date"].str[:4],
-        },
-        title="UMAP 2D-Projektion der Film-Embeddings",
-        labels={"x": "UMAP 1", "y": "UMAP 2", "color": "Genre"},
-        width=900,
-        height=650,
+    _ax = pymde.plot(
+        mde_coords,
+        color_by=_genre_codes,
+        figsize=(10, 7),
+        title="PyMDE 2D-Projektion der Film-Embeddings",
     )
-    _fig.update_traces(marker=dict(size=4, opacity=0.7))
-    _fig.update_layout(legend=dict(itemsizing="constant"))
-    mo.ui.plotly(_fig)
+    mde_plot = mo.ui.matplotlib(_ax.figure)
+    mde_plot
+    return mde_plot, _genres
+
+
+@app.cell
+def _(mde_coords, mde_plot):
+    mde_mask = mde_plot.value.get_mask(
+        mde_coords[:, 0].numpy(), mde_coords[:, 1].numpy()
+    )
+    return (mde_mask,)
+
+
+@app.cell
+def _(mde_mask, mo, movies_df):
+    mo.stop(not mde_mask.any(), mo.md("*Punkte im Diagramm auswählen um Filme zu sehen.*"))
+
+    _df = movies_df[["title", "vote_average", "release_date", "genres"]].copy()
+    _df.columns = ["Titel", "Bewertung", "Erscheinungsjahr", "Genres"]
+    _df["Erscheinungsjahr"] = _df["Erscheinungsjahr"].str[:4]
+    mo.ui.table(_df[mde_mask].reset_index(drop=True))
     return
 
 

@@ -16,6 +16,7 @@ dependencies = [
     "openai>=2.29.0",
     "pandas>=2.3.3",
     "plotly>=6.7.0",
+    "pymde>=0.3.0",
     "pyzmq>=27.1.0",
     "qdrant-client[fastembed]>=1.17.1",
     "sentence-transformers>=5.4.1",
