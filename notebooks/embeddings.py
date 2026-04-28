@@ -11,6 +11,7 @@
 #     "scikit-learn",
 #     "plotly",
 #     "umap-learn",
+#     "pymde",
 #     "qdrant-client",
 #     "chromadb",
 # ]
@@ -18,7 +19,7 @@
 
 import marimo
 
-__generated_with = "0.21.1"
+__generated_with = "0.23.2"
 app = marimo.App(width="medium")
 
 
@@ -29,18 +30,18 @@ def _():
     return (mo,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     # Embeddings & Vektordatenbanken
 
     In diesem Tutorial lernen wir:
 
-    1. **Embeddings erzeugen** – mit drei verschiedenen Modellen (Gemini, Sentence Transformers, BGE-M3)
-    2. **Ähnlichkeitssuche** – Kosinus-Ähnlichkeit direkt auf den Vektoren
-    3. **Visualisierung** – interaktive 2D-Projektion der Embedding-Vektoren
-    4. **Vektordatenbanken** – Qdrant (Cloud) und ChromaDB (lokal)
-    5. **Semantische Suche** – Suchfeld mit Live-Ergebnissen aus Qdrant
+    1. **Embeddings erzeugen**, mit drei verschiedenen Modellen (Gemini, Sentence Transformers, BGE-M3)
+    2. **Ähnlichkeitssuche**, Kosinus-Ähnlichkeit direkt auf den Vektoren
+    3. **Visualisierung**, interaktive 2D-Projektion der Embedding-Vektoren
+    4. **Vektordatenbanken**, Qdrant (Cloud) und ChromaDB (lokal)
+    5. **Semantische Suche**, Suchfeld mit Live-Ergebnissen aus Qdrant
 
     Als Datensatz nutzen wir den [TMDB 5000 Movies](https://www.kaggle.com/datasets/tmdb/tmdb-movie-metadata) Datensatz.
     Die **Overview** (Filmbeschreibung) wird vektorisiert, alles andere sind Metadaten.
@@ -83,7 +84,7 @@ def _():
     return (device,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 1. Daten laden
@@ -114,7 +115,7 @@ def _(Path, pd):
     return (movies_df,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 2. Embeddings erzeugen
@@ -130,7 +131,7 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2a) Gemini Embeddings
@@ -164,7 +165,6 @@ def _(gemini_client, movies_df, np):
 
     _num_batches = (len(_overviews) + _batch_size - 1) // _batch_size
     for _i in range(0, len(_overviews), _batch_size):
-        _batch_num = _i // _batch_size + 1
         _batch = _overviews[_i : _i + _batch_size]
 
         _result = gemini_client.models.embed_content(
@@ -178,10 +178,10 @@ def _(gemini_client, movies_df, np):
     return (gemini_embeddings,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ### 2b) Sentence Transformers – `all-mpnet-base-v2`
+    ### 2b) Sentence Transformers, `all-mpnet-base-v2`
 
     [Sentence Transformers](https://www.sbert.net/) ist eine Python-Bibliothek für lokale Embedding-Modelle.
     `all-mpnet-base-v2` ist eines der besten allgemeinen englischen Modelle.
@@ -204,14 +204,14 @@ def _(device, movies_df, np):
     return (st_embeddings,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### 2c) BGE-M3
 
     [BGE-M3](https://github.com/FlagOpen/FlagEmbedding) ist ein multilinguales Embedding-Modell von BAAI.
     Es unterstützt drei Retrieval-Modi: Dense, Sparse (SPLADE-style) und Multi-Vector (ColBERT).
-    Wir berechnen Dense und Sparse – Sparse wird später für Hybrid Search in Qdrant genutzt.
+    Wir berechnen Dense und Sparse, Sparse wird später für Hybrid Search in Qdrant genutzt.
     """)
     return
 
@@ -239,10 +239,10 @@ def _(device, movies_df, np):
     return bge_embeddings, bge_lexical_weights, bge_model
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ## 3. Mit Embeddings spielen – Kosinus-Ähnlichkeit
+    ## 3. Mit Embeddings spielen, Kosinus-Ähnlichkeit
 
     Ohne Datenbank können wir schon ähnliche Filme finden: Wir berechnen die
     Kosinus-Ähnlichkeit eines Films zu allen anderen und sortieren nach Ähnlichkeit.
@@ -270,7 +270,7 @@ def _(bge_embeddings, gemini_embeddings, model_selector, st_embeddings):
     }
     selected_embeddings = _embedding_map[model_selector.value]
     print(
-        f"Ausgewählt: {model_selector.value} – Shape: {selected_embeddings.shape}"
+        f"Ausgewählt: {model_selector.value}, Shape: {selected_embeddings.shape}"
     )
     return (selected_embeddings,)
 
@@ -330,44 +330,48 @@ def _(mo, movie_search, movies_df, pd, selected_embeddings):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 4. Interaktive 2D-Projektion der Embeddings
 
     Wir projizieren die hochdimensionalen Vektoren mit [PyMDE](https://pymde.org/) auf 2 Dimensionen.
     PyMDE (Minimum-Distortion Embedding) erhält die Nachbarschaftsstruktur besser als UMAP bei
-    großen Abständen. **Punkte auswählen** zeigt die zugehörigen Filme als Tabelle.
+    großen Abständen. **Punkte auswählen** (Box Select oder Lasso) zeigt die zugehörigen Filme als Tabelle.
     """)
     return
 
 
-@app.function
-@mo.persistent_cache
-def compute_mde(embeddings_key, embeddings, device):
-    import marimo as _mo
-    import pymde
-    import torch
+@app.cell
+def _(mo):
+    @mo.persistent_cache
+    def compute_mde(embeddings_key, embeddings, device):
+        import marimo as _mo
+        import pymde
+        import torch
 
-    _mo.output.append(
-        _mo.md("MDE wird berechnet … einen Moment bitte.").callout(kind="warn")
-    )
-    _data = torch.tensor(embeddings, dtype=torch.float32)
-    _mde = pymde.preserve_neighbors(
-        _data,
-        embedding_dim=2,
-        constraint=pymde.Standardized(),
-        device=device,
-        verbose=True,
-    )
-    coords = _mde.embed(verbose=True)
-    _mo.output.clear()
-    return coords
+        _mo.output.append(
+            _mo.md("MDE wird berechnet ... einen Moment bitte.").callout(
+                kind="warn"
+            )
+        )
+        data = torch.tensor(embeddings, dtype=torch.float32)
+        mde = pymde.preserve_neighbors(
+            data,
+            embedding_dim=2,
+            constraint=pymde.Standardized(),
+            device=device,
+            verbose=True,
+        )
+        coords = mde.embed(verbose=True)
+        _mo.output.clear()
+        return coords
+
+    return (compute_mde,)
 
 
 @app.cell
-def _(device, model_selector, selected_embeddings):
-    # embeddings_key stellt sicher dass der Cache bei Modellwechsel neu berechnet wird
+def _(compute_mde, device, model_selector, selected_embeddings):
     mde_coords = compute_mde(model_selector.value, selected_embeddings, device)
     return (mde_coords,)
 
@@ -375,49 +379,57 @@ def _(device, model_selector, selected_embeddings):
 @app.cell
 def _(mde_coords, mo, movies_df):
     import json
-    import pymde
+    import plotly.express as px
 
-    def _parse_first_genre(genres_str):
+
+    def parse_first_genre(genres_str):
         try:
             genres_list = json.loads(genres_str.replace("'", '"'))
             return genres_list[0]["name"] if genres_list else "Unknown"
         except Exception:
             return "Unknown"
 
-    _genres = movies_df["genres"].apply(_parse_first_genre)
-    _genre_codes = _genres.astype("category").cat.codes.to_numpy()
 
-    _ax = pymde.plot(
-        mde_coords,
-        color_by=_genre_codes,
-        figsize=(10, 7),
+    plot_df = movies_df[["title", "vote_average"]].copy()
+    plot_df["genre"] = movies_df["genres"].apply(parse_first_genre)
+    plot_df["x"] = mde_coords[:, 0].cpu().numpy()
+    plot_df["y"] = mde_coords[:, 1].cpu().numpy()
+
+    embedding_fig = px.scatter(
+        plot_df,
+        x="x",
+        y="y",
+        color="genre",
+        hover_name="title",
+        hover_data={"vote_average": True, "x": False, "y": False},
         title="PyMDE 2D-Projektion der Film-Embeddings",
+        height=600,
     )
-    mde_plot = mo.ui.matplotlib(_ax.figure)
+    embedding_fig.update_layout(dragmode="select")
+
+    mde_plot = mo.ui.plotly(embedding_fig)
     mde_plot
-    return mde_plot, _genres
+    return (mde_plot,)
 
 
 @app.cell
-def _(mde_coords, mde_plot):
-    mde_mask = mde_plot.value.get_mask(
-        mde_coords[:, 0].numpy(), mde_coords[:, 1].numpy()
+def _(mde_plot, mo, movies_df):
+    mo.stop(
+        not mde_plot.indices,
+        mo.md("*Punkte im Diagramm auswählen um Filme zu sehen.*"),
     )
-    return (mde_mask,)
-
-
-@app.cell
-def _(mde_mask, mo, movies_df):
-    mo.stop(not mde_mask.any(), mo.md("*Punkte im Diagramm auswählen um Filme zu sehen.*"))
-
-    _df = movies_df[["title", "vote_average", "release_date", "genres"]].copy()
-    _df.columns = ["Titel", "Bewertung", "Erscheinungsjahr", "Genres"]
-    _df["Erscheinungsjahr"] = _df["Erscheinungsjahr"].str[:4]
-    mo.ui.table(_df[mde_mask].reset_index(drop=True))
+    selected_df = (
+        movies_df[["title", "vote_average", "release_date", "genres"]]
+        .iloc[mde_plot.indices]
+        .copy()
+    )
+    selected_df.columns = ["Titel", "Bewertung", "Erscheinungsjahr", "Genres"]
+    selected_df["Erscheinungsjahr"] = selected_df["Erscheinungsjahr"].str[:4]
+    mo.ui.table(selected_df.reset_index(drop=True))
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 5. Vektordatenbanken
@@ -425,7 +437,7 @@ def _(mo):
     ### 5a) Qdrant (Cloud)
 
     [Qdrant](https://qdrant.tech/) ist ein Berliner Unternehmen für Vektordatenbanken.
-    Wir nutzen einen Cloud-Cluster – URL und API Key kommen aus der `.env`.
+    Wir nutzen einen Cloud-Cluster, URL und API Key kommen aus der `.env`.
 
     ```
     QDRANT_URL=https://...
@@ -554,12 +566,12 @@ def _(collection_name, gemini_embeddings, movies_df, pd, qdrant_client):
         print(f"{len(movies_df)} Filme in Qdrant hochgeladen (dense + BM25)")
     else:
         print(
-            f"Collection hat bereits {_info.points_count} Punkte – Upload übersprungen"
+            f"Collection hat bereits {_info.points_count} Punkte, Upload übersprungen"
         )
     return Document, PointStruct
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ### Semantische Suche
@@ -625,10 +637,10 @@ def _(collection_name, gemini_client, mo, pd, qdrant_client, search_input):
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ### Filtered Search – Semantische Suche mit Jahresfilter
+    ### Filtered Search, Semantische Suche mit Jahresfilter
 
     Finde semantisch ähnliche Filme, die in einem bestimmten Zeitraum erschienen sind.
     """)
@@ -706,7 +718,7 @@ def _(
                     "Titel": _point.payload["title"],
                     "Jahr": _point.payload.get("release_year", ""),
                     "Bewertung": _point.payload.get("vote_average", ""),
-                    "Overview": _point.payload.get("overview", "")[:150] + "…",
+                    "Overview": _point.payload.get("overview", "")[:150] + "...",
                 }
             )
 
@@ -714,7 +726,7 @@ def _(
             mo.vstack(
                 [
                     mo.md(
-                        f"### Filtered: *{filter_query.value}* ({year_from.value}–{year_to.value})"
+                        f"### Filtered: *{filter_query.value}* ({year_from.value}-{year_to.value})"
                     ),
                     pd.DataFrame(_rows),
                 ]
@@ -725,16 +737,23 @@ def _(
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## Hybrid Search – Reciprocal Rank Fusion (RRF)
+    ## Hybrid Search, Reciprocal Rank Fusion (RRF)
 
     Kombiniert **Dense** (Gemini-Semantik) und **Sparse** (BM25-Keywords) über
     [Reciprocal Rank Fusion](https://qdrant.tech/documentation/concepts/hybrid-queries/).
-    Jede Suche liefert eine Rangliste; RRF fusioniert beide zu einem gemeinsamen Ranking.
+    Jede Suche liefert eine Rangliste, RRF fusioniert beide zu einem gemeinsamen Ranking.
     """)
     return
+
+
+@app.cell
+def _():
+    from qdrant_client.models import Fusion, FusionQuery, Prefetch
+
+    return Fusion, FusionQuery, Prefetch
 
 
 @app.cell
@@ -810,14 +829,14 @@ def _(
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
-    ### Hybrid Search BGE-M3 – Dense + SPLADE + RRF
+    ### Hybrid Search BGE-M3, Dense + SPLADE + RRF
 
     Gleiche Anfrage wie oben, aber mit BGE-M3 Dense + SPLADE Sparse statt Gemini + BM25.
-    BGE-M3 Sparse ist ein **gelerntes** Sparse-Modell – es versteht Synonyme
-    ("mafia" ↔ "crime family") ohne explizite Query-Expansion.
+    BGE-M3 Sparse ist ein **gelerntes** Sparse-Modell, es versteht Synonyme
+    ("mafia" vs. "crime family") ohne explizite Query-Expansion.
     """)
     return
 
@@ -841,15 +860,15 @@ def _(
                 "dense": VectorParams(size=_vector_size, distance=Distance.COSINE),
             },
             sparse_vectors_config={
-                # Kein IDF-Modifier – BGE-M3 Sparse sind bereits gelernte Gewichte (SPLADE-style)
+                # Kein IDF-Modifier: BGE-M3 Sparse sind bereits gelernte Gewichte (SPLADE-style)
                 "sparse": SparseVectorParams(),
             },
         )
         print(
-            f"Collection '{_collection_name}' erstellt (BGE-M3 dense={_vector_size}d + SPLADE sparse)"
+            f"Collection '{bge_collection_name}' erstellt (BGE-M3 dense={_vector_size}d + SPLADE sparse)"
         )
     else:
-        print(f"Collection '{_collection_name}' existiert bereits")
+        print(f"Collection '{bge_collection_name}' existiert bereits")
     return (bge_collection_name,)
 
 
@@ -917,14 +936,14 @@ def _(
                     )
                 )
             qdrant_client.upsert(
-                collection_name=_collection_name, wait=True, points=_points
+                collection_name=bge_collection_name, wait=True, points=_points
             )
         print(
-            f"{len(movies_df)} Filme in '{_collection_name}' hochgeladen (BGE-M3 dense + SPLADE)"
+            f"{len(movies_df)} Filme in '{bge_collection_name}' hochgeladen (BGE-M3 dense + SPLADE)"
         )
     else:
         print(
-            f"Collection hat bereits {_info.points_count} Punkte – Upload übersprungen"
+            f"Collection hat bereits {_info.points_count} Punkte, Upload übersprungen"
         )
     return (SparseVector,)
 
@@ -1002,7 +1021,7 @@ def _(
     return
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     ## 6. ChromaDB (lokal)
@@ -1085,14 +1104,21 @@ def _(movies_df, pd, st_embeddings):
     return (chroma_collection,)
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    **ChromaDB Suche**, Beispiel: "mafia movie"
+    """)
+    return
+
+
 @app.cell
-def _(chroma_collection, mo):
-    mo.md('**ChromaDB Suche** – Beispiel: "mafia movie"')
-    _results = chroma_collection.query(
+def _(chroma_collection):
+    chroma_results = chroma_collection.query(
         query_texts=["mafia movie"],
         n_results=5,
     )
-    _results
+    chroma_results
     return
 
 

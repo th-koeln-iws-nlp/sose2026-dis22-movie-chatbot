@@ -13,6 +13,7 @@ dependencies = [
     "google-genai>=1.68.0",
     "googleapis-common-protos>=1.70.0",
     "instructor>=1.14.5",
+    "marimo>=0.23.2",
     "openai>=2.29.0",
     "pandas>=2.3.3",
     "plotly>=6.7.0",
