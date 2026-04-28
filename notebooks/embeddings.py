@@ -109,9 +109,7 @@ def _(Path, pd):
     )
 
     print(f"{len(movies_df)} Filme mit Overview geladen")
-    movies_df[
-        ["title", "overview", "vote_average", "release_date", "genres"]
-    ].head(10)
+    movies_df[["title", "overview", "vote_average", "release_date", "genres"]].head(10)
     return (movies_df,)
 
 
@@ -229,9 +227,7 @@ def _(device, movies_df, np):
         return_sparse=True,
     )
     bge_embeddings = np.array(_output["dense_vecs"])
-    bge_lexical_weights = _output[
-        "lexical_weights"
-    ]  # list of dicts {token_id: weight}
+    bge_lexical_weights = _output["lexical_weights"]  # list of dicts {token_id: weight}
     print(f"BGE-M3 Dense Shape: {bge_embeddings.shape}")
     print(
         f"BGE-M3 Sparse: {len(bge_lexical_weights)} Dokumente, Beispiel-Keys: {list(bge_lexical_weights[0].keys())[:5]}"
@@ -269,9 +265,7 @@ def _(bge_embeddings, gemini_embeddings, model_selector, st_embeddings):
         "bge_m3": bge_embeddings,
     }
     selected_embeddings = _embedding_map[model_selector.value]
-    print(
-        f"Ausgewählt: {model_selector.value}, Shape: {selected_embeddings.shape}"
-    )
+    print(f"Ausgewählt: {model_selector.value}, Shape: {selected_embeddings.shape}")
     return (selected_embeddings,)
 
 
@@ -295,9 +289,7 @@ def _(mo, movie_search, movies_df, pd, selected_embeddings):
     # Film finden (exakter Titel aus Dropdown)
     _mask = movies_df["title"] == movie_search.value
     if _mask.sum() == 0:
-        mo.output.replace(
-            mo.md(f"**Kein Film gefunden für:** *{movie_search.value}*")
-        )
+        mo.output.replace(mo.md(f"**Kein Film gefunden für:** *{movie_search.value}*"))
     else:
         _idx = movies_df[_mask].index[0]
         _query_vec = selected_embeddings[_idx].reshape(1, -1)
@@ -338,6 +330,9 @@ def _(mo):
     Wir projizieren die hochdimensionalen Vektoren mit [PyMDE](https://pymde.org/) auf 2 Dimensionen.
     PyMDE (Minimum-Distortion Embedding) erhält die Nachbarschaftsstruktur besser als UMAP bei
     großen Abständen. **Punkte auswählen** (Box Select oder Lasso) zeigt die zugehörigen Filme als Tabelle.
+
+    Die Visualisierung erzeugt auch eine **Animation** (`play()`), die zeigt, wie sich die Punkte während der
+    Optimierung bewegen. Die Punkte sind nach Genre eingefärbt.
     """)
     return
 
@@ -345,16 +340,18 @@ def _(mo):
 @app.cell
 def _(mo):
     @mo.persistent_cache
-    def compute_mde(embeddings_key, embeddings, device):
+    def compute_mde_v3(embeddings_key, embeddings, device, genres_str=None):
         import marimo as _mo
         import pymde
         import torch
+        import numpy as np
+        import json
+        from pathlib import Path
 
         _mo.output.append(
-            _mo.md("MDE wird berechnet ... einen Moment bitte.").callout(
-                kind="warn"
-            )
+            _mo.md("MDE wird berechnet ... einen Moment bitte.").callout(kind="warn")
         )
+
         data = torch.tensor(embeddings, dtype=torch.float32)
         mde = pymde.preserve_neighbors(
             data,
@@ -363,24 +360,65 @@ def _(mo):
             device=device,
             verbose=True,
         )
-        coords = mde.embed(verbose=True)
-        _mo.output.clear()
-        return coords
 
-    return (compute_mde,)
+        # Parse genres for coloring
+        if genres_str is not None:
+
+            def parse_first_genre(g):
+                try:
+                    genres_list = json.loads(g.replace("'", '"'))
+                    return genres_list[0]["name"] if genres_list else "Unknown"
+                except Exception:
+                    return "Unknown"
+
+            color_by = np.array([parse_first_genre(g) for g in genres_str])
+        else:
+            color_by = None
+
+        # Embed with snapshots and create GIF animation
+        gif_path = Path(f"mde_animation_{embeddings_key}.gif")
+        coords = mde.embed(snapshot_every=3, verbose=True)
+        mde.play(
+            color_by=color_by,
+            axis_limits=(-2, 2),
+            marker_size=3.0,
+            savepath=str(gif_path),
+        )
+        _mo.output.clear()
+        return coords, str(gif_path)
+
+    return (compute_mde_v3,)
 
 
 @app.cell
-def _(compute_mde, device, model_selector, selected_embeddings):
-    mde_coords = compute_mde(model_selector.value, selected_embeddings, device)
-    return (mde_coords,)
+def _(compute_mde_v3, device, model_selector, movies_df, selected_embeddings):
+    mde_coords, gif_path = compute_mde_v3(
+        model_selector.value,
+        selected_embeddings,
+        device,
+        movies_df["genres"].tolist(),
+    )
+    return gif_path, mde_coords
+
+
+@app.cell
+def _(gif_path, mo):
+    mo.vstack(
+        [
+            mo.md("### MDE Optimierungs-Animation"),
+            mo.md(
+                "Die Animation zeigt, wie sich die Punkte während der Optimierung bewegen:"
+            ),
+            mo.image(src=gif_path),
+        ]
+    )
+    return
 
 
 @app.cell
 def _(mde_coords, mo, movies_df):
     import json
     import plotly.express as px
-
 
     def parse_first_genre(genres_str):
         try:
@@ -389,11 +427,18 @@ def _(mde_coords, mo, movies_df):
         except Exception:
             return "Unknown"
 
-
     plot_df = movies_df[["title", "vote_average"]].copy()
     plot_df["genre"] = movies_df["genres"].apply(parse_first_genre)
     plot_df["x"] = mde_coords[:, 0].cpu().numpy()
     plot_df["y"] = mde_coords[:, 1].cpu().numpy()
+
+    # Filter to only show points between -2 and 2
+    plot_df = plot_df[
+        (plot_df["x"] >= -2)
+        & (plot_df["x"] <= 2)
+        & (plot_df["y"] >= -2)
+        & (plot_df["y"] <= 2)
+    ].reset_index(drop=True)
 
     embedding_fig = px.scatter(
         plot_df,
@@ -523,9 +568,7 @@ def _(collection_name, gemini_embeddings, movies_df, pd, qdrant_client):
                     "runtime": float(_row["runtime"])
                     if pd.notna(_row["runtime"])
                     else None,
-                    "budget": int(_row["budget"])
-                    if pd.notna(_row["budget"])
-                    else None,
+                    "budget": int(_row["budget"]) if pd.notna(_row["budget"]) else None,
                     "revenue": int(_row["revenue"])
                     if pd.notna(_row["revenue"])
                     else None,
@@ -542,9 +585,7 @@ def _(collection_name, gemini_embeddings, movies_df, pd, qdrant_client):
                     "production_countries": str(
                         _row.get("production_countries", "") or ""
                     ),
-                    "spoken_languages": str(
-                        _row.get("spoken_languages", "") or ""
-                    ),
+                    "spoken_languages": str(_row.get("spoken_languages", "") or ""),
                     "tmdb_id": int(_row["id"]) if pd.notna(_row["id"]) else None,
                 }
                 _points.append(
@@ -631,9 +672,7 @@ def _(collection_name, gemini_client, mo, pd, qdrant_client, search_input):
             )
         )
     else:
-        mo.output.replace(
-            mo.md("*Suchbegriff eingeben um Ergebnisse zu sehen...*")
-        )
+        mo.output.replace(mo.md("*Suchbegriff eingeben um Ergebnisse zu sehen...*"))
     return
 
 
@@ -908,9 +947,7 @@ def _(
                     "runtime": float(_row["runtime"])
                     if pd.notna(_row["runtime"])
                     else None,
-                    "budget": int(_row["budget"])
-                    if pd.notna(_row["budget"])
-                    else None,
+                    "budget": int(_row["budget"]) if pd.notna(_row["budget"]) else None,
                     "revenue": int(_row["revenue"])
                     if pd.notna(_row["revenue"])
                     else None,
@@ -1069,9 +1106,7 @@ def _(movies_df, pd, st_embeddings):
                     if pd.notna(row["runtime"])
                     else 0.0,
                     "budget": int(row["budget"]) if pd.notna(row["budget"]) else 0,
-                    "revenue": int(row["revenue"])
-                    if pd.notna(row["revenue"])
-                    else 0,
+                    "revenue": int(row["revenue"]) if pd.notna(row["revenue"]) else 0,
                     "popularity": float(row["popularity"]),
                     "vote_average": float(row["vote_average"]),
                     "vote_count": int(row["vote_count"]),
@@ -1098,9 +1133,7 @@ def _(movies_df, pd, st_embeddings):
             )
         print(f"{len(movies_df)} Filme in ChromaDB eingefügt")
     else:
-        print(
-            f"ChromaDB Collection hat bereits {chroma_collection.count()} Einträge"
-        )
+        print(f"ChromaDB Collection hat bereits {chroma_collection.count()} Einträge")
     return (chroma_collection,)
 
 
