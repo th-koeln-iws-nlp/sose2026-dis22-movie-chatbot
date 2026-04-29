@@ -180,11 +180,13 @@ def _(mo):
     mo.md("""
     ### 2a) Gemini Embeddings
 
-    Damit Gemini Embeddings richtig über Vertex AI abgerechnet wird, muss man sich einloggen und das `GOOGLE_CLOUD_PROJECT` in der `.env` setzen.
-
+    Zwei Schritte sind notwendig:
     ```
     gcloud auth application-default login
-     ```
+    gcloud auth application-default set-quota-project DEIN_PROJEKT_ID
+    ```
+    Danach `GOOGLE_CLOUD_PROJECT` in der `.env` setzen.
+    Der zweite Befehl wird haufig vergessen und ist die haufigste Ursache fur "Permission denied".
     """)
     return
 
@@ -273,9 +275,7 @@ def _(device, movies_df, np):
         return_sparse=True,
     )
     bge_embeddings = np.array(_output["dense_vecs"])
-    bge_lexical_weights = _output[
-        "lexical_weights"
-    ]  # list of dicts {token_id: weight}
+    bge_lexical_weights = _output["lexical_weights"]  # list of dicts {token_id: weight}
     print(f"BGE-M3 Dense Shape: {bge_embeddings.shape}")
     print(
         f"BGE-M3 Sparse: {len(bge_lexical_weights)} Dokumente, Beispiel-Keys: {list(bge_lexical_weights[0].keys())[:5]}"
@@ -313,9 +313,7 @@ def _(bge_embeddings, gemini_embeddings, model_selector, st_embeddings):
         "bge_m3": bge_embeddings,
     }
     selected_embeddings = _embedding_map[model_selector.value]
-    print(
-        f"Ausgewählt: {model_selector.value}, Shape: {selected_embeddings.shape}"
-    )
+    print(f"Ausgewählt: {model_selector.value}, Shape: {selected_embeddings.shape}")
     return (selected_embeddings,)
 
 
@@ -339,9 +337,7 @@ def _(mo, movie_search, movies_df, pd, selected_embeddings):
     # Film finden (exakter Titel aus Dropdown)
     _mask = movies_df["title"] == movie_search.value
     if _mask.sum() == 0:
-        mo.output.replace(
-            mo.md(f"**Kein Film gefunden für:** *{movie_search.value}*")
-        )
+        mo.output.replace(mo.md(f"**Kein Film gefunden für:** *{movie_search.value}*"))
     else:
         _idx = movies_df[_mask].index[0]
         _query_vec = selected_embeddings[_idx].reshape(1, -1)
@@ -402,9 +398,7 @@ def _(mo):
         from pathlib import Path
 
         _mo.output.append(
-            _mo.md("MDE wird berechnet ... einen Moment bitte.").callout(
-                kind="warn"
-            )
+            _mo.md("MDE wird berechnet ... einen Moment bitte.").callout(kind="warn")
         )
 
         data = torch.tensor(embeddings, dtype=torch.float32)
@@ -578,9 +572,7 @@ def _(collection_name, gemini_embeddings, movies_df, pd, qdrant_client):
                     "runtime": float(_row["runtime"])
                     if pd.notna(_row["runtime"])
                     else None,
-                    "budget": int(_row["budget"])
-                    if pd.notna(_row["budget"])
-                    else None,
+                    "budget": int(_row["budget"]) if pd.notna(_row["budget"]) else None,
                     "revenue": int(_row["revenue"])
                     if pd.notna(_row["revenue"])
                     else None,
@@ -597,9 +589,7 @@ def _(collection_name, gemini_embeddings, movies_df, pd, qdrant_client):
                     "production_countries": str(
                         _row.get("production_countries", "") or ""
                     ),
-                    "spoken_languages": str(
-                        _row.get("spoken_languages", "") or ""
-                    ),
+                    "spoken_languages": str(_row.get("spoken_languages", "") or ""),
                     "tmdb_id": int(_row["id"]) if pd.notna(_row["id"]) else None,
                 }
                 _points.append(
@@ -682,9 +672,7 @@ def _(collection_name, gemini_client, mo, pd, qdrant_client, search_input):
             )
         )
     else:
-        mo.output.replace(
-            mo.md("*Suchbegriff eingeben um Ergebnisse zu sehen...*")
-        )
+        mo.output.replace(mo.md("*Suchbegriff eingeben um Ergebnisse zu sehen...*"))
     return
 
 
@@ -959,9 +947,7 @@ def _(
                     "runtime": float(_row["runtime"])
                     if pd.notna(_row["runtime"])
                     else None,
-                    "budget": int(_row["budget"])
-                    if pd.notna(_row["budget"])
-                    else None,
+                    "budget": int(_row["budget"]) if pd.notna(_row["budget"]) else None,
                     "revenue": int(_row["revenue"])
                     if pd.notna(_row["revenue"])
                     else None,
@@ -1120,9 +1106,7 @@ def _(movies_df, pd, st_embeddings):
                     if pd.notna(row["runtime"])
                     else 0.0,
                     "budget": int(row["budget"]) if pd.notna(row["budget"]) else 0,
-                    "revenue": int(row["revenue"])
-                    if pd.notna(row["revenue"])
-                    else 0,
+                    "revenue": int(row["revenue"]) if pd.notna(row["revenue"]) else 0,
                     "popularity": float(row["popularity"]),
                     "vote_average": float(row["vote_average"]),
                     "vote_count": int(row["vote_count"]),
@@ -1149,9 +1133,7 @@ def _(movies_df, pd, st_embeddings):
             )
         print(f"{len(movies_df)} Filme in ChromaDB eingefügt")
     else:
-        print(
-            f"ChromaDB Collection hat bereits {chroma_collection.count()} Einträge"
-        )
+        print(f"ChromaDB Collection hat bereits {chroma_collection.count()} Einträge")
     return (chroma_collection,)
 
 

@@ -50,7 +50,7 @@ def _():
     from pathlib import Path
     from dotenv import load_dotenv
 
-    return Path, load_dotenv, np, os, pd
+    return Path, load_dotenv, os, pd
 
 
 @app.cell
@@ -202,10 +202,13 @@ def _(mo):
 
 
 @app.cell
-def _(mo, np):
+def _(mo):
+    @mo.persistent_cache
     def compute_bge_full(overviews_tuple):
+        import marimo as _mo
         from FlagEmbedding import BGEM3FlagModel
         import torch
+        import numpy as np
 
         if torch.cuda.is_available():
             dev = "cuda"
@@ -214,8 +217,8 @@ def _(mo, np):
         else:
             dev = "cpu"
 
-        mo.output.append(
-            mo.md(
+        _mo.output.append(
+            _mo.md(
                 "BGE-M3 Embeddings (Dense + Sparse + ColBERT) werden berechnet..."
             ).callout(kind="warn")
         )
@@ -234,7 +237,7 @@ def _(mo, np):
         sparse = output["lexical_weights"]
         colbert = output["colbert_vecs"]
 
-        mo.output.clear()
+        _mo.output.clear()
         return dense, sparse, colbert
 
     return (compute_bge_full,)
@@ -340,7 +343,7 @@ def _(
     collection_info = qdrant.get_collection(collection_name)
 
     if collection_info.points_count == 0:
-        batch_size = 15
+        batch_size = 50
         for batch_start in range(0, len(movies_df), batch_size):
             batch_end = min(batch_start + batch_size, len(movies_df))
             points = []
@@ -349,18 +352,12 @@ def _(
                 release = str(_row.get("release_date", "") or "")
                 lw = sparse_weights[idx]
 
-                # Parse first genre only to reduce payload size
-                import json
-
-                try:
-                    genres_list = json.loads(
-                        str(_row.get("genres", "[]")).replace("'", '"')
+                # Debug: Check ColBERT vector size
+                colbert_size = len(colbert_vecs[idx])
+                if colbert_size > 200:
+                    print(
+                        f"⚠️  Film #{idx} '{_row['title']}' hat {colbert_size} ColBERT-Token-Vektoren"
                     )
-                    first_genre = (
-                        genres_list[0]["name"] if genres_list else "Unknown"
-                    )
-                except Exception:
-                    first_genre = "Unknown"
 
                 payload = {
                     "title": str(_row["title"]),
@@ -371,7 +368,7 @@ def _(
                     else None,
                     "vote_average": float(_row["vote_average"]),
                     "vote_count": int(_row["vote_count"]),
-                    "genre": first_genre,  # Only first genre, not full JSON string
+                    "genres": str(_row.get("genres", "") or ""),
                     "runtime": float(_row["runtime"])
                     if pd.notna(_row["runtime"])
                     else None,
@@ -390,9 +387,36 @@ def _(
                         payload=payload,
                     )
                 )
-            qdrant.upsert(
-                collection_name=collection_name, wait=True, points=points
+
+            # Calculate and print batch size before upload
+            import json
+            import sys
+
+            batch_json = json.dumps(
+                [
+                    {
+                        "id": p.id,
+                        "vector": {
+                            "dense": p.vector["dense"],
+                            "colbert": p.vector["colbert"],
+                            "sparse": {
+                                "indices": p.vector["sparse"].indices,
+                                "values": p.vector["sparse"].values,
+                            },
+                        },
+                        "payload": p.payload,
+                    }
+                    for p in points
+                ]
             )
+            batch_size_mb = sys.getsizeof(batch_json) / (1024 * 1024)
+            print(f"Batch {batch_start}-{batch_end}: {batch_size_mb:.2f} MB")
+
+            if batch_size_mb > 30:
+                print(f"⚠️  WARNUNG: Batch zu groß! Überspringe Upload.")
+                continue
+
+            qdrant.upsert(collection_name=collection_name, wait=True, points=points)
         print(f"{len(movies_df)} Filme hochgeladen (dense + sparse + colbert)")
     else:
         print(
@@ -516,7 +540,6 @@ def _(
             ]
         )
 
-
     df_dense = to_df(results_dense, "Kosinus")
     df_sparse = to_df(results_sparse, "SPLADE")
     df_hybrid = to_df(results_hybrid, "RRF")
@@ -558,8 +581,85 @@ def _(
 
 @app.cell(hide_code=True)
 def _(mo):
+    mo.md(r"""
+    ## 6. Reciprocal Rank Fusion (RRF)
+
+    Dense-Scores (Kosinus-Ahnlichkeit, Werte -1 bis 1) und Sparse-Scores (SPLADE-Gewichte, andere Skala)
+    sind **nicht direkt vergleichbar**. Eine einfache gewichtete Summe funktioniert nicht zuverlassig.
+
+    **Die Losung: Nur die Range nutzen, nicht die Scores.**
+
+    $$\text{RRF}(d) = \sum_{r \in \text{Ranker}} \frac{1}{k + \text{rank}_r(d)}$$
+
+    - $k = 60$ (Standardwert), dampft den Einfluss der absoluten Spitzenpositionen
+    - Dokumente, die in **mehreren Listen** weit oben stehen, gewinnen
+    - Keine Score-Normalisierung notwendig, kein Training
+
+    Das folgende Beispiel zeigt, wie RRF fur eine hybride Anfrage funktioniert.
+    """)
+    return
+
+
+@app.cell
+def _():
+    import plotly.graph_objects as go
+
+    rrf_example = [
+        {"Film": "The Godfather", "BM25-Rang": 1, "Dense-Rang": 3},
+        {"Film": "Goodfellas", "BM25-Rang": 2, "Dense-Rang": 6},
+        {"Film": "The Godfather II", "BM25-Rang": 3, "Dense-Rang": 2},
+        {"Film": "Scarface", "BM25-Rang": 5, "Dense-Rang": 1},
+        {"Film": "The Departed", "BM25-Rang": 4, "Dense-Rang": 5},
+        {"Film": "Casino", "BM25-Rang": 6, "Dense-Rang": 4},
+    ]
+
+    k = 60
+    for entry in rrf_example:
+        bm25_score = 1 / (k + entry["BM25-Rang"])
+        dense_score = 1 / (k + entry["Dense-Rang"])
+        entry["RRF-Score"] = round(bm25_score + dense_score, 6)
+        entry["BM25-Beitrag"] = round(bm25_score, 6)
+        entry["Dense-Beitrag"] = round(dense_score, 6)
+
+    rrf_example.sort(key=lambda x: x["RRF-Score"], reverse=True)
+
+    films = [e["Film"] for e in rrf_example]
+    bm25_contrib = [e["BM25-Beitrag"] for e in rrf_example]
+    dense_contrib = [e["Dense-Beitrag"] for e in rrf_example]
+
+    rrf_fig = go.Figure()
+    rrf_fig.add_trace(
+        go.Bar(
+            name="BM25-Beitrag",
+            x=films,
+            y=bm25_contrib,
+            marker_color="#636EFA",
+        )
+    )
+    rrf_fig.add_trace(
+        go.Bar(
+            name="Dense-Beitrag",
+            x=films,
+            y=dense_contrib,
+            marker_color="#EF553B",
+        )
+    )
+    rrf_fig.update_layout(
+        barmode="stack",
+        title="RRF-Score-Zusammensetzung (Anfrage: 'mafia boss replaced by his son')",
+        xaxis_title="Film",
+        yaxis_title="RRF-Score",
+        legend_title="Herkunft",
+        height=400,
+    )
+    rrf_fig
+    return (go,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
     mo.md("""
-    ## 6. Ranking-Vergleich uber alle Strategien
+    ## 7. Ranking-Vergleich uber alle Strategien
 
     Die folgende Visualisierung zeigt, wie sich die Reihenfolge der Top-10-Filme
     je nach Retrieval-Strategie unterscheidet. Ein Film der in allen Strategien weit oben steht,
@@ -570,6 +670,7 @@ def _(mo):
 
 @app.cell
 def _(
+    go,
     pd,
     query_input,
     results_colbert,
@@ -577,9 +678,6 @@ def _(
     results_hybrid,
     results_sparse,
 ):
-    import plotly.express as px
-    import plotly.graph_objects as go
-
     strategies = {
         "Dense": results_dense,
         "Sparse": results_sparse,
@@ -606,9 +704,7 @@ def _(
             )
         rank_rows.append(_row)
 
-    rank_df = (
-        pd.DataFrame(rank_rows).sort_values("Hybrid (RRF)").reset_index(drop=True)
-    )
+    rank_df = pd.DataFrame(rank_rows).sort_values("Hybrid (RRF)").reset_index(drop=True)
 
     strategy_colors = {
         "Dense": "#636EFA",
@@ -640,6 +736,25 @@ def _(
         xaxis_tickangle=-35,
     )
     rank_fig
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md("""
+    ## 8. Zusammenfassung
+
+    | Strategie | Stark bei | Schwach bei | Beispiel |
+    |---|---|---|---|
+    | **Sparse (BM25/SPLADE)** | Titel, Namen, Jahreszahlen | Synonyme, Umschreibungen | "Interstellar 2014" |
+    | **Dense (Bi-Encoder)** | Semantische Ahnlichkeit, Synonyme | Exakte Terme, Kompression | "Film uber Einsamkeit im All" |
+    | **Hybrid (RRF)** | Robustheit uber alle Query-Typen | Mehr Komplexitat | Produktion RAG |
+    | **ColBERT (MaxSim)** | Feingranulares Token-Matching | Hoher Speicherbedarf | "Christopher Nolan Zeitreise-Drama" |
+
+    **Fur das Film-Projekt:**
+    - **Meilenstein 2 (RAG):** Hybrid Dense + Sparse + RRF in Qdrant
+    - **Stretch Goal:** ColBERT als Reranker fur die Top-k Kandidaten
+    """)
     return
 
 
