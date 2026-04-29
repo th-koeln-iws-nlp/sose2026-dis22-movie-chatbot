@@ -23,6 +23,52 @@ __generated_with = "0.23.2"
 app = marimo.App(width="medium")
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    import json
+    import plotly.express as px
+
+
+    def parse_first_genre(genres_str):
+        try:
+            genres_list = json.loads(genres_str.replace("'", '"'))
+            return genres_list[0]["name"] if genres_list else "Unknown"
+        except Exception:
+            return "Unknown"
+
+
+    plot_df = movies_df[["title", "vote_average"]].copy()
+    plot_df["genre"] = movies_df["genres"].apply(parse_first_genre)
+    plot_df["x"] = mde_coords[:, 0].cpu().numpy()
+    plot_df["y"] = mde_coords[:, 1].cpu().numpy()
+
+    # Filter to only show points between -2 and 2
+    # plot_df = plot_df[
+    #     (plot_df["x"] >= -2)
+    #     & (plot_df["x"] <= 2)
+    #     & (plot_df["y"] >= -2)
+    #     & (plot_df["y"] <= 2)
+    # ].reset_index(drop=True)
+
+    embedding_fig = px.scatter(
+        plot_df,
+        x="x",
+        y="y",
+        color="genre",
+        hover_name="title",
+        hover_data={"vote_average": True, "x": False, "y": False},
+        title="PyMDE 2D-Projektion der Film-Embeddings",
+        height=600,
+    )
+    embedding_fig.update_layout(dragmode="select")
+
+    mde_plot = mo.ui.plotly(embedding_fig)
+    mde_plot
+    """)
+    return
+
+
 @app.cell
 def _():
     import marimo as mo
@@ -104,12 +150,12 @@ def _(Path, pd):
     movies_df = (
         movies_df[movies_df["vote_count"] >= 1000]
         .sort_values("vote_average", ascending=False)
-        .head(500)
         .reset_index(drop=True)
+        .head(500)
     )
 
     print(f"{len(movies_df)} Filme mit Overview geladen")
-    movies_df[["title", "overview", "vote_average", "release_date", "genres"]].head(10)
+    movies_df[["title", "overview", "vote_average", "release_date", "genres"]]
     return (movies_df,)
 
 
@@ -122,7 +168,7 @@ def _(mo):
 
     | Modell | Anbieter | Dimensionen | Besonderheit |
     |--------|----------|-------------|--------------|
-    | `gemini-embedding-001` | Google | 768 | Cloud-API, multilingual |
+    | `gemini-embedding-001` | Google | 3072 | Cloud-API, multilingual |
     | `all-mpnet-base-v2` | Sentence Transformers | 768 | Lokal, schnell, nur Englisch |
     | `BAAI/bge-m3` | FlagEmbedding | 1024 | Lokal, multilingual, multi-granular |
     """)
@@ -227,7 +273,9 @@ def _(device, movies_df, np):
         return_sparse=True,
     )
     bge_embeddings = np.array(_output["dense_vecs"])
-    bge_lexical_weights = _output["lexical_weights"]  # list of dicts {token_id: weight}
+    bge_lexical_weights = _output[
+        "lexical_weights"
+    ]  # list of dicts {token_id: weight}
     print(f"BGE-M3 Dense Shape: {bge_embeddings.shape}")
     print(
         f"BGE-M3 Sparse: {len(bge_lexical_weights)} Dokumente, Beispiel-Keys: {list(bge_lexical_weights[0].keys())[:5]}"
@@ -265,7 +313,9 @@ def _(bge_embeddings, gemini_embeddings, model_selector, st_embeddings):
         "bge_m3": bge_embeddings,
     }
     selected_embeddings = _embedding_map[model_selector.value]
-    print(f"Ausgewählt: {model_selector.value}, Shape: {selected_embeddings.shape}")
+    print(
+        f"Ausgewählt: {model_selector.value}, Shape: {selected_embeddings.shape}"
+    )
     return (selected_embeddings,)
 
 
@@ -289,7 +339,9 @@ def _(mo, movie_search, movies_df, pd, selected_embeddings):
     # Film finden (exakter Titel aus Dropdown)
     _mask = movies_df["title"] == movie_search.value
     if _mask.sum() == 0:
-        mo.output.replace(mo.md(f"**Kein Film gefunden für:** *{movie_search.value}*"))
+        mo.output.replace(
+            mo.md(f"**Kein Film gefunden für:** *{movie_search.value}*")
+        )
     else:
         _idx = movies_df[_mask].index[0]
         _query_vec = selected_embeddings[_idx].reshape(1, -1)
@@ -301,11 +353,12 @@ def _(mo, movie_search, movies_df, pd, selected_embeddings):
                 "Ähnlichkeit": _similarities,
                 "Overview": movies_df["overview"],
                 "Bewertung": movies_df["vote_average"],
+                "Genre": movies_df["genres"],
             }
         )
         _result_df = (
             _result_df.sort_values("Ähnlichkeit", ascending=False)
-            .iloc[1:11]  # Top 10 ohne den Film selbst
+            .iloc[0:11]  # Top 10 ohne den Film selbst
             .reset_index(drop=True)
         )
 
@@ -349,7 +402,9 @@ def _(mo):
         from pathlib import Path
 
         _mo.output.append(
-            _mo.md("MDE wird berechnet ... einen Moment bitte.").callout(kind="warn")
+            _mo.md("MDE wird berechnet ... einen Moment bitte.").callout(
+                kind="warn"
+            )
         )
 
         data = torch.tensor(embeddings, dtype=torch.float32)
@@ -398,7 +453,7 @@ def _(compute_mde_v3, device, model_selector, movies_df, selected_embeddings):
         device,
         movies_df["genres"].tolist(),
     )
-    return gif_path, mde_coords
+    return (gif_path,)
 
 
 @app.cell
@@ -413,48 +468,6 @@ def _(gif_path, mo):
         ]
     )
     return
-
-
-@app.cell
-def _(mde_coords, mo, movies_df):
-    import json
-    import plotly.express as px
-
-    def parse_first_genre(genres_str):
-        try:
-            genres_list = json.loads(genres_str.replace("'", '"'))
-            return genres_list[0]["name"] if genres_list else "Unknown"
-        except Exception:
-            return "Unknown"
-
-    plot_df = movies_df[["title", "vote_average"]].copy()
-    plot_df["genre"] = movies_df["genres"].apply(parse_first_genre)
-    plot_df["x"] = mde_coords[:, 0].cpu().numpy()
-    plot_df["y"] = mde_coords[:, 1].cpu().numpy()
-
-    # Filter to only show points between -2 and 2
-    plot_df = plot_df[
-        (plot_df["x"] >= -2)
-        & (plot_df["x"] <= 2)
-        & (plot_df["y"] >= -2)
-        & (plot_df["y"] <= 2)
-    ].reset_index(drop=True)
-
-    embedding_fig = px.scatter(
-        plot_df,
-        x="x",
-        y="y",
-        color="genre",
-        hover_name="title",
-        hover_data={"vote_average": True, "x": False, "y": False},
-        title="PyMDE 2D-Projektion der Film-Embeddings",
-        height=600,
-    )
-    embedding_fig.update_layout(dragmode="select")
-
-    mde_plot = mo.ui.plotly(embedding_fig)
-    mde_plot
-    return (mde_plot,)
 
 
 @app.cell
@@ -525,9 +538,6 @@ def _(gemini_embeddings, qdrant_client):
             vectors_config={
                 "dense": VectorParams(size=_vector_size, distance=Distance.COSINE),
             },
-            sparse_vectors_config={
-                "sparse": SparseVectorParams(modifier=Modifier.IDF),
-            },
         )
         qdrant_client.create_payload_index(
             collection_name=collection_name,
@@ -568,7 +578,9 @@ def _(collection_name, gemini_embeddings, movies_df, pd, qdrant_client):
                     "runtime": float(_row["runtime"])
                     if pd.notna(_row["runtime"])
                     else None,
-                    "budget": int(_row["budget"]) if pd.notna(_row["budget"]) else None,
+                    "budget": int(_row["budget"])
+                    if pd.notna(_row["budget"])
+                    else None,
                     "revenue": int(_row["revenue"])
                     if pd.notna(_row["revenue"])
                     else None,
@@ -585,7 +597,9 @@ def _(collection_name, gemini_embeddings, movies_df, pd, qdrant_client):
                     "production_countries": str(
                         _row.get("production_countries", "") or ""
                     ),
-                    "spoken_languages": str(_row.get("spoken_languages", "") or ""),
+                    "spoken_languages": str(
+                        _row.get("spoken_languages", "") or ""
+                    ),
                     "tmdb_id": int(_row["id"]) if pd.notna(_row["id"]) else None,
                 }
                 _points.append(
@@ -593,10 +607,6 @@ def _(collection_name, gemini_embeddings, movies_df, pd, qdrant_client):
                         id=_idx,
                         vector={
                             "dense": gemini_embeddings[_idx].tolist(),
-                            "sparse": Document(
-                                text=_payload["overview"],
-                                model="Qdrant/bm25",
-                            ),
                         },
                         payload=_payload,
                     )
@@ -672,7 +682,9 @@ def _(collection_name, gemini_client, mo, pd, qdrant_client, search_input):
             )
         )
     else:
-        mo.output.replace(mo.md("*Suchbegriff eingeben um Ergebnisse zu sehen...*"))
+        mo.output.replace(
+            mo.md("*Suchbegriff eingeben um Ergebnisse zu sehen...*")
+        )
     return
 
 
@@ -757,7 +769,7 @@ def _(
                     "Titel": _point.payload["title"],
                     "Jahr": _point.payload.get("release_year", ""),
                     "Bewertung": _point.payload.get("vote_average", ""),
-                    "Overview": _point.payload.get("overview", "")[:150] + "...",
+                    "Overview": _point.payload.get("overview", ""),
                 }
             )
 
@@ -947,7 +959,9 @@ def _(
                     "runtime": float(_row["runtime"])
                     if pd.notna(_row["runtime"])
                     else None,
-                    "budget": int(_row["budget"]) if pd.notna(_row["budget"]) else None,
+                    "budget": int(_row["budget"])
+                    if pd.notna(_row["budget"])
+                    else None,
                     "revenue": int(_row["revenue"])
                     if pd.notna(_row["revenue"])
                     else None,
@@ -1106,7 +1120,9 @@ def _(movies_df, pd, st_embeddings):
                     if pd.notna(row["runtime"])
                     else 0.0,
                     "budget": int(row["budget"]) if pd.notna(row["budget"]) else 0,
-                    "revenue": int(row["revenue"]) if pd.notna(row["revenue"]) else 0,
+                    "revenue": int(row["revenue"])
+                    if pd.notna(row["revenue"])
+                    else 0,
                     "popularity": float(row["popularity"]),
                     "vote_average": float(row["vote_average"]),
                     "vote_count": int(row["vote_count"]),
@@ -1133,7 +1149,9 @@ def _(movies_df, pd, st_embeddings):
             )
         print(f"{len(movies_df)} Filme in ChromaDB eingefügt")
     else:
-        print(f"ChromaDB Collection hat bereits {chroma_collection.count()} Einträge")
+        print(
+            f"ChromaDB Collection hat bereits {chroma_collection.count()} Einträge"
+        )
     return (chroma_collection,)
 
 
