@@ -343,7 +343,7 @@ def _(
     collection_info = qdrant.get_collection(collection_name)
 
     if collection_info.points_count == 0:
-        batch_size = 50
+        batch_size = 5
         for batch_start in range(0, len(movies_df), batch_size):
             batch_end = min(batch_start + batch_size, len(movies_df))
             points = []
