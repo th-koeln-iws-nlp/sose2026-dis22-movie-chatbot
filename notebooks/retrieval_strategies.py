@@ -96,7 +96,7 @@ def _(Path, pd):
         .reset_index(drop=True)
     )
     print(f"{len(movies_df)} Filme geladen")
-    movies_df[["title", "overview", "vote_average"]].head(5)
+    movies_df.head(5)
     return (movies_df,)
 
 
